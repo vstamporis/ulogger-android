@@ -12,17 +12,12 @@ package net.fabiszewski.ulogger;
 import android.app.Activity;
 import android.location.Location;
 import android.location.LocationListener;
-import android.os.Build;
+import android.os.AsyncTask;
 import android.os.Bundle;
-import android.os.CancellationSignal;
-import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.UiThread;
-import androidx.annotation.WorkerThread;
 
 import java.lang.ref.WeakReference;
 
@@ -30,7 +25,7 @@ import java.lang.ref.WeakReference;
 /**
  * Task to get location according to user preferences criteria
  */
-class LoggerTask implements LocationListener, Runnable {
+class LoggerTask extends AsyncTask<Void, Void, Location> implements LocationListener {
 
     private static final String TAG = LoggerTask.class.getSimpleName();
     private static final int E_OK = 0;
@@ -42,13 +37,6 @@ class LoggerTask implements LocationListener, Runnable {
     private final LocationHelper locationHelper;
     private Location location;
     private volatile boolean waiting;
-    private boolean isCancelled = false;
-    private boolean isRunning = false;
-
-    private CancellationSignal cancellationSignal = null;
-
-    private final Handler uiHandler = new Handler(Looper.getMainLooper());
-    private final Object lock = new Object();
 
     private int error = LocationHelper.LoggerException.E_OK;
 
@@ -58,33 +46,7 @@ class LoggerTask implements LocationListener, Runnable {
     }
 
     @Override
-    public void run() {
-        if (Logger.DEBUG) { Log.d(TAG, "[task run]"); }
-        isRunning = true;
-        locationHelper.updatePreferences();
-        Location location = doInBackground();
-        if (!isCancelled) {
-            uiHandler.post(() -> onPostExecute(location));
-        }
-        isRunning = false;
-    }
-
-    public void cancel() {
-        if (Logger.DEBUG) { Log.d(TAG, "[task cancelled]"); }
-        isCancelled = true;
-        quitLoop();
-    }
-
-    public boolean isRunning() {
-        return isRunning;
-    }
-
-    /**
-     * Requests location update, waits in loop
-     * @return Location or null if none
-     */
-    @WorkerThread
-    private Location doInBackground() {
+    protected Location doInBackground(Void... voids) {
         if (Logger.DEBUG) { Log.d(TAG, "[doInBackground]"); }
         Activity activity = getActivity();
         if (activity == null) {
@@ -94,63 +56,52 @@ class LoggerTask implements LocationListener, Runnable {
             error = E_PERMISSION;
             return null;
         }
-        synchronized (lock) {
-            waiting = true;
-            final long startTime = System.currentTimeMillis();
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    cancellationSignal = new CancellationSignal();
-                }
-                locationHelper.requestSingleUpdate(this, cancellationSignal);
-                while (waiting) {
-                    try {
-                        lock.wait(TIMEOUT_MS);
-                    } catch (InterruptedException e) {
-                        if (Logger.DEBUG) { Log.d(TAG, "[loop interrupted]"); }
-                    }
-                    if (System.currentTimeMillis() - startTime >= TIMEOUT_MS) {
-                        if (Logger.DEBUG) { Log.d(TAG, "[loop timeout]"); }
-                        waiting = false;
-                    }
-                }
-                removeUpdates();
-                return location;
-            } catch (LocationHelper.LoggerException e) {
-                error = e.getCode();
-            }
+        try {
+            locationHelper.requestSingleUpdate(this, Looper.getMainLooper());
+            loop();
+            locationHelper.removeUpdates(this);
+            return location;
+        } catch (LocationHelper.LoggerException e) {
+            error = e.getCode();
         }
         return null;
     }
 
     /**
-     * Remove updates
-     * Uses locationManager or cancellation signal if supported
+     * Loop on worker thread
      */
-    private void removeUpdates() {
-        locationHelper.removeUpdates(this);
-        if (cancellationSignal != null) {
-            cancellationSignal.cancel();
+    private void loop() {
+        waiting = true;
+        final long startTime = System.currentTimeMillis();
+        while (waiting) {
+            if (System.currentTimeMillis() - startTime > TIMEOUT_MS) {
+                if (Logger.DEBUG) { Log.d(TAG, "[loop timeout]"); }
+                break;
+            }
+            if (isCancelled()) {
+                if (Logger.DEBUG) { Log.d(TAG, "[loop cancelled]"); }
+                break;
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ignored) {
+                break;
+            }
         }
     }
 
     /**
      * Quit loop
      */
-    private synchronized void quitLoop() {
-        synchronized (lock) {
-            waiting = false;
-            lock.notifyAll();
-        }
+    private void quitLoop() {
+        waiting = false;
     }
 
-    /**
-     * Execute callback with location result
-     * @param location Location
-     */
-    @UiThread
-    private void onPostExecute(Location location) {
+    @Override
+    protected void onPostExecute(Location location) {
+        super.onPostExecute(location);
         LoggerTaskCallback callback = weakCallback.get();
-        if (callback != null && callback.getActivity() != null) {
+        if (callback != null) {
             if (error == E_OK && location != null) {
                 callback.onLoggerTaskCompleted(location);
             } else {
@@ -176,14 +127,13 @@ class LoggerTask implements LocationListener, Runnable {
     private void restartUpdates() throws LocationHelper.LoggerException {
         if (Logger.DEBUG) { Log.d(TAG, "[location updates restart]"); }
 
-        removeUpdates();
-        locationHelper.requestSingleUpdate(this, cancellationSignal);
+        locationHelper.removeUpdates(this);
+        locationHelper.requestSingleUpdate(this, Looper.getMainLooper());
     }
 
 
-    @UiThread
     @Override
-    public void onLocationChanged(@NonNull Location location) {
+    public void onLocationChanged(Location location) {
         if (Logger.DEBUG) { Log.d(TAG, "[location changed: " + location + "]"); }
         if (hasRequiredAccuracy(location)) {
             this.location = location;
@@ -197,7 +147,7 @@ class LoggerTask implements LocationListener, Runnable {
      * @param location Location
      * @return True if skipped
      */
-    private boolean hasRequiredAccuracy(@NonNull Location location) {
+    private boolean hasRequiredAccuracy(Location location) {
 
         if (!locationHelper.hasRequiredAccuracy(location)) {
             try {
@@ -210,14 +160,12 @@ class LoggerTask implements LocationListener, Runnable {
         return true;
     }
 
-    @UiThread
-    @Override
     @SuppressWarnings({"deprecation", "RedundantSuppression"})
+    @Override
     public void onStatusChanged(String provider, int status, Bundle extras) { }
 
-    @UiThread
     @Override
-    public void onProviderEnabled(@NonNull String provider) {
+    public void onProviderEnabled(String provider) {
         if (Logger.DEBUG) { Log.d(TAG, "[onProviderEnabled: " + provider + "]"); }
         try {
             restartUpdates();
@@ -226,9 +174,8 @@ class LoggerTask implements LocationListener, Runnable {
         }
     }
 
-    @UiThread
     @Override
-    public void onProviderDisabled(@NonNull String provider) {
+    public void onProviderDisabled(String provider) {
         if (Logger.DEBUG) { Log.d(TAG, "[onProviderDisabled: " + provider + "]"); }
         try {
             restartUpdates();

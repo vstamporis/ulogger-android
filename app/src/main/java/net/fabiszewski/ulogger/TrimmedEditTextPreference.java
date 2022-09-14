@@ -39,10 +39,7 @@ class TrimmedEditTextPreference extends EditTextPreference {
 
     @Override
     public void setText(String text) {
-        if (text != null) {
-            text = text.trim();
-        }
-        super.setText(text);
+        super.setText(text.trim());
     }
 
 }

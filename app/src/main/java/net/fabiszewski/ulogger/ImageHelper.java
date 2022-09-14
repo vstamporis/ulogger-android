@@ -171,7 +171,7 @@ class ImageHelper {
         int sizePx = getThumbnailSize(context);
         Bitmap bitmap;
         ContentResolver cr = context.getContentResolver();
-        if (uri.getScheme().equals("content") && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             bitmap = cr.loadThumbnail(uri, new Size(sizePx, sizePx), null);
         } else {
             try (InputStream is = cr.openInputStream(uri)) {
@@ -185,9 +185,9 @@ class ImageHelper {
     }
 
     /**
-     * Extract thumbnail from bitmap
+     * Extract thumbnail from URI
      * @param context Context
-     * @param bitmap Bitmap
+     * @param uri URI
      * @return Thumbnail
      */
     static Bitmap getThumbnail(@NonNull Context context, @NonNull Bitmap bitmap) {

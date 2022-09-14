@@ -72,7 +72,7 @@ class AutoNamePreference extends TrimmedEditTextPreference {
     public CharSequence getSummary() {
         if ((getSummaryProvider() != null)) {
             final String text = super.getText();
-            if (text != null && !TextUtils.isEmpty(text)) {
+            if (!TextUtils.isEmpty(text)) {
                 return getAutoName(text, Calendar.getInstance().getTime());
             }
         }

@@ -13,20 +13,16 @@ import android.app.Activity;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.net.Uri;
-import android.os.Handler;
-import android.os.Looper;
+import android.os.AsyncTask;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.UiThread;
-import androidx.annotation.WorkerThread;
 import androidx.preference.PreferenceManager;
 
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 
-import static net.fabiszewski.ulogger.ImageHelper.clearImageCache;
 import static net.fabiszewski.ulogger.ImageHelper.getPersistablePermission;
 import static net.fabiszewski.ulogger.ImageHelper.getResampledBitmap;
 import static net.fabiszewski.ulogger.ImageHelper.getThumbnail;
@@ -36,97 +32,59 @@ import static net.fabiszewski.ulogger.ImageHelper.saveToCache;
 /**
  * Task to downsample image
  */
-class ImageTask implements Runnable {
+class ImageTask extends AsyncTask<Uri, Void, ImageTask.ImageTaskResult> {
 
     private static final String TAG = ImageTask.class.getSimpleName();
 
     private final WeakReference<ImageTaskCallback> weakCallback;
 
-    private String errorMessage = "";
-    private final Uri uri;
+    private String errorMessage = "Image resampling failed";
 
-    private boolean isRunning = false;
-    private boolean isCancelled = false;
-    private final boolean onlyThumbnail;
-
-    private final Handler uiHandler = new Handler(Looper.getMainLooper());
-
-    ImageTask(Uri uri, ImageTaskCallback callback) {
-        this(uri, callback, false);
-    }
-
-    ImageTask(Uri uri, ImageTaskCallback callback, boolean onlyThumbnail) {
-        this.uri = uri;
+    ImageTask(ImageTaskCallback callback) {
         weakCallback = new WeakReference<>(callback);
-        this.onlyThumbnail = onlyThumbnail;
     }
 
     @Override
-    public void run() {
-        isRunning = true;
-        ImageTaskResult result = doInBackground();
-        if (isCancelled) {
-            cleanUp(result);
-        } else {
-            uiHandler.post(() -> onPostExecute(result));
-        }
-        isRunning = false;
-    }
-
-    public void cancel() {
-        if (Logger.DEBUG) { Log.d(TAG, "[task cancelled]"); }
-        isCancelled = true;
-    }
-
-    public boolean isRunning() {
-        return isRunning;
-    }
-
-    @WorkerThread
-    private ImageTaskResult doInBackground() {
+    protected ImageTaskResult doInBackground(Uri... params) {
         if (Logger.DEBUG) { Log.d(TAG, "[doInBackground]"); }
         Activity activity = getActivity();
-        if (activity == null) {
+        if (activity == null || params.length != 1 || params[0] == null) {
             return null;
         }
-
+        Uri inUri = params[0];
         ImageTaskResult result = null;
         try {
             Uri savedUri;
             Bitmap thumbnail;
 
-            if (onlyThumbnail) {
-                savedUri = uri;
-                thumbnail = getThumbnail(activity, uri);
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
+            int dstWidth = Integer.parseInt(prefs.getString(SettingsActivity.KEY_IMAGE_SIZE, activity.getString(R.string.pref_imagesize_default)));
+            if (dstWidth == 0) {
+                savedUri = inUri;
+                getPersistablePermission(activity, inUri);
+                thumbnail = getThumbnail(activity, inUri);
             } else {
-                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
-                int dstWidth = Integer.parseInt(prefs.getString(SettingsActivity.KEY_IMAGE_SIZE, activity.getString(R.string.pref_imagesize_default)));
-                if (dstWidth == 0) {
-                    savedUri = uri;
-                    getPersistablePermission(activity, uri);
-                    thumbnail = getThumbnail(activity, uri);
-                } else {
-                    Bitmap bitmap = getResampledBitmap(activity, uri, dstWidth);
-                    savedUri = saveToCache(activity, bitmap);
-                    thumbnail = getThumbnail(activity, bitmap);
-                    bitmap.recycle();
-                }
+                Bitmap bitmap = getResampledBitmap(activity, inUri, dstWidth);
+                savedUri = saveToCache(activity, bitmap);
+                thumbnail = getThumbnail(activity, bitmap);
+                bitmap.recycle();
             }
             if (savedUri != null && thumbnail != null) {
                 result = new ImageTaskResult(savedUri, thumbnail);
             }
         } catch (IOException e) {
             if (e.getMessage() != null) {
-                errorMessage = e.getMessage();
+                errorMessage += ": " + e.getMessage();
             }
         }
         return result;
     }
 
-    @UiThread
-    private void onPostExecute(@Nullable ImageTaskResult result) {
+    @Override
+    protected void onPostExecute(@Nullable ImageTaskResult result) {
+        super.onPostExecute(result);
         ImageTaskCallback callback = weakCallback.get();
-        if (callback != null && callback.getActivity() != null) {
+        if (callback != null) {
             if (result == null) {
                 callback.onImageTaskFailure(errorMessage);
             } else {
@@ -142,17 +100,6 @@ class ImageTask implements Runnable {
             return callback.getActivity();
         }
         return null;
-    }
-
-    /**
-     * Try to clean image cache
-     * @param result Task result
-     */
-    private void cleanUp(ImageTaskResult result) {
-        Activity activity = getActivity();
-        if (result != null && activity != null) {
-            clearImageCache(activity.getApplicationContext());
-        }
     }
 
     interface ImageTaskCallback {

@@ -1,1 +1,1 @@
-Location tracker with focus on privacy and energy efficiency
+Location tracker to record hiking, biking tracks and other outdoor activities

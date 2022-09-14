@@ -46,7 +46,6 @@ public class ProviderPreferenceDialogFragment extends ListPreferenceDialogWithMe
 
     private ListPreference preference;
 
-    @NonNull
     public static ProviderPreferenceDialogFragment newInstance(String key) {
         final ProviderPreferenceDialogFragment fragment = new ProviderPreferenceDialogFragment();
         final Bundle b = new Bundle(1);
@@ -121,6 +120,7 @@ public class ProviderPreferenceDialogFragment extends ListPreferenceDialogWithMe
 
     /**
      * Get default layout for single choice dialog
+     * FIXME: how to do it without private resources?
      * @return Layout resource id
      */
     @SuppressLint("PrivateResource")
@@ -164,7 +164,7 @@ public class ProviderPreferenceDialogFragment extends ListPreferenceDialogWithMe
         @Override
         public View getView(int position, View convertView, @NonNull ViewGroup parent) {
             if (convertView == null) {
-                convertView = LayoutInflater.from(requireActivity()).inflate(resourceId, parent, false);
+                convertView = LayoutInflater.from(getActivity()).inflate(resourceId, parent, false);
                 if (!isEnabled(position)) {
                     ((CheckedTextView) convertView).setTextColor(Color.LTGRAY);
                 }

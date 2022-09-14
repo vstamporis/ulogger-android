@@ -212,15 +212,14 @@ class WebHelper {
                 connection.setFixedLengthStreamingMode(contentLength);
 
                 out = new BufferedOutputStream(connection.getOutputStream());
-                byte[] bytes = data;
                 if (isMultipart) {
-                    out.write(bytes);
+                    out.write(data);
                     writeMultipartFile(out, uri);
                     out.write(delimiter, 0, delimiter.length - 2);
                     String end = DASH + CRLF;
-                    bytes = end.getBytes(StandardCharsets.UTF_8);
+                    data = end.getBytes(StandardCharsets.UTF_8);
                 }
-                out.write(bytes);
+                out.write(data);
                 out.flush();
 
                 int responseCode = connection.getResponseCode();
@@ -288,8 +287,8 @@ class WebHelper {
      * @param data Text part data
      * @return Length in bytes
      */
-    private long getMultipartLength(@NonNull Uri uri, byte[] data) {
-        long length = 0;
+    private int getMultipartLength(@NonNull Uri uri, byte[] data) {
+        int length = 0;
         String fileMime = ImageHelper.getFileMime(context, uri);
         if (fileMime != null) {
             // text part size
@@ -347,6 +346,7 @@ class WebHelper {
 
     /**
      * Get text/plain parameters as part of multipart form
+     * @param out Output stream
      * @param params Parameters
      * @return Multipart body for text parameters
      * @throws IOException Exception on failure

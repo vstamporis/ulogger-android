@@ -9,27 +9,13 @@
 
 package net.fabiszewski.ulogger;
 
-import static android.app.PendingIntent.FLAG_IMMUTABLE;
-import static android.app.PendingIntent.FLAG_ONE_SHOT;
-import static android.os.Process.THREAD_PRIORITY_BACKGROUND;
-
 import android.app.AlarmManager;
-import android.app.Notification;
+import android.app.IntentService;
 import android.app.PendingIntent;
-import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
-import android.os.Build;
-import android.os.Handler;
-import android.os.HandlerThread;
-import android.os.IBinder;
-import android.os.Looper;
-import android.os.Message;
 import android.util.Log;
-
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import org.json.JSONException;
 
@@ -43,105 +29,67 @@ import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.Map;
 
+import static android.app.PendingIntent.FLAG_ONE_SHOT;
+
 /**
- * Service synchronizing local database positions with remote server
+ * Service synchronizing local database positions with remote server.
+ *
  */
-public class WebSyncService extends Service {
+
+public class WebSyncService extends IntentService {
 
     private static final String TAG = WebSyncService.class.getSimpleName();
     public static final String BROADCAST_SYNC_FAILED = "net.fabiszewski.ulogger.broadcast.sync_failed";
     public static final String BROADCAST_SYNC_DONE = "net.fabiszewski.ulogger.broadcast.sync_done";
 
-    private HandlerThread thread;
-    private ServiceHandler serviceHandler;
     private DbAccess db;
     private WebHelper web;
     private static PendingIntent pi = null;
 
     final private static int FIVE_MINUTES = 1000 * 60 * 5;
 
-    private NotificationHelper notificationHelper;
 
     /**
-     * Basic initializations
-     * Start looper to process uploads
+     * Constructor
      */
+    public WebSyncService() {
+        super("WebSyncService");
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
-        if (Logger.DEBUG) { Log.d(TAG, "[onCreate]"); }
+        if (Logger.DEBUG) { Log.d(TAG, "[websync create]"); }
 
         web = new WebHelper(this);
-        notificationHelper = new NotificationHelper(this, true);
-
-        thread = new HandlerThread("WebSyncThread", THREAD_PRIORITY_BACKGROUND);
-        thread.start();
-        Looper looper = thread.getLooper();
-        if (looper != null) {
-            serviceHandler = new ServiceHandler(looper);
-        }
-        // keep database open during whole service runtime
         db = DbAccess.getInstance();
         db.open(this);
     }
 
     /**
-     * Handler to do synchronization on background thread
-     */
-    private final class ServiceHandler extends Handler {
-        public ServiceHandler(@NonNull Looper looper) {
-            super(looper);
-        }
-
-        @Override
-        public void handleMessage(Message msg) {
-            cancelPending();
-
-            if (!WebHelper.isAuthorized) {
-                try {
-                    web.authorize();
-                } catch (WebAuthException|IOException|JSONException e) {
-                    handleError(e);
-                    stopSelf(msg.arg1);
-                    return;
-                }
-            }
-
-            // get track id
-            int trackId = getTrackId();
-            if (trackId > 0) {
-                doSync(trackId);
-            }
-
-            stopSelf(msg.arg1);
-        }
-    }
-
-    /**
-     * Start foreground service
-     *
+     * Handle synchronization intent
      * @param intent Intent
-     * @param flags Flags
-     * @param startId Unique id
-     * @return START_STICKY on success
      */
     @Override
-    public int onStartCommand(@NonNull Intent intent, int flags, int startId) {
-        if (Logger.DEBUG) { Log.d(TAG, "[onStartCommand]"); }
+    protected void onHandleIntent(Intent intent) {
+        if (Logger.DEBUG) { Log.d(TAG, "[websync start]"); }
 
-        if (serviceHandler == null) {
-            if (Logger.DEBUG) { Log.d(TAG, "[Give up on serviceHandler not initialized]"); }
-            stopSelf();
-            return START_NOT_STICKY;
+        cancelPending();
+
+        if (!WebHelper.isAuthorized) {
+            try {
+                web.authorize();
+            } catch (WebAuthException|IOException|JSONException e) {
+                handleError(e);
+                return;
+            }
         }
-        final Notification notification = notificationHelper.showNotification();
-        startForeground(notificationHelper.getId(), notification);
 
-        Message msg = serviceHandler.obtainMessage();
-        msg.arg1 = startId;
-        serviceHandler.sendMessage(msg);
-
-        return START_STICKY;
+        // get track id
+        int trackId = getTrackId();
+        if (trackId > 0) {
+            doSync(trackId);
+        }
     }
 
     /**
@@ -162,11 +110,11 @@ public class WebSyncService extends Service {
                 trackId = web.startTrack(trackName);
                 db.setTrackId(trackId);
             } catch (IOException e) {
-                if (Logger.DEBUG) { Log.d(TAG, "[getTrackId: io exception: " + e + "]"); }
+                if (Logger.DEBUG) { Log.d(TAG, "[websync io exception: " + e + "]"); }
                 // schedule retry
                 handleError(e);
             } catch (WebAuthException e) {
-                if (Logger.DEBUG) { Log.d(TAG, "[getTrackId: auth exception: " + e + "]"); }
+                if (Logger.DEBUG) { Log.d(TAG, "[websync auth exception: " + e + "]"); }
                 WebHelper.deauthorize();
                 try {
                     // reauthorize and retry
@@ -191,7 +139,7 @@ public class WebSyncService extends Service {
         // iterate over positions in db
         try (Cursor cursor = db.getUnsynced()) {
             while (cursor.moveToNext()) {
-                int rowId = cursor.getInt(cursor.getColumnIndexOrThrow(DbContract.Positions._ID));
+                int rowId = cursor.getInt(cursor.getColumnIndex(DbContract.Positions._ID));
                 Map<String, String> params = cursorToMap(cursor);
                 params.put(WebHelper.PARAM_TRACKID, String.valueOf(trackId));
                 web.postPosition(params);
@@ -202,13 +150,13 @@ public class WebSyncService extends Service {
         } catch (IOException e) {
             // handle web errors
             if (Logger.DEBUG) {
-                Log.d(TAG, "[doSync: io exception: " + e + "]");
+                Log.d(TAG, "[websync io exception: " + e + "]");
             }
             // schedule retry
             handleError(e);
         } catch (WebAuthException e) {
             if (Logger.DEBUG) {
-                Log.d(TAG, "[doSync: auth exception: " + e + "]");
+                Log.d(TAG, "[websync auth exception: " + e + "]");
             }
             WebHelper.deauthorize();
             try {
@@ -242,7 +190,7 @@ public class WebSyncService extends Service {
         } else {
             message = reason;
         }
-        if (Logger.DEBUG) { Log.d(TAG, "[handleError: retry: " + message + "]"); }
+        if (Logger.DEBUG) { Log.d(TAG, "[websync retry: " + message + "]"); }
 
         db.setError(message);
         Intent intent = new Intent(BROADCAST_SYNC_FAILED);
@@ -258,14 +206,10 @@ public class WebSyncService extends Service {
      * Set pending alarm
      */
     private void setPending() {
-        if (Logger.DEBUG) { Log.d(TAG, "[setPending alarm]"); }
+        if (Logger.DEBUG) { Log.d(TAG, "[websync set alarm]"); }
         AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         Intent syncIntent = new Intent(getApplicationContext(), WebSyncService.class);
-        int flags = FLAG_ONE_SHOT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            flags |= FLAG_IMMUTABLE;
-        }
-        pi = PendingIntent.getService(this, 0, syncIntent, flags);
+        pi = PendingIntent.getService(this, 0, syncIntent, FLAG_ONE_SHOT);
         if (am != null) {
             am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + FIVE_MINUTES, pi);
         }
@@ -276,7 +220,7 @@ public class WebSyncService extends Service {
      */
     private void cancelPending() {
         if (hasPending()) {
-            if (Logger.DEBUG) { Log.d(TAG, "[cancelPending alarm]"); }
+            if (Logger.DEBUG) { Log.d(TAG, "[websync cancel alarm]"); }
             AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
             if (am != null) {
                 am.cancel(pi);
@@ -333,23 +277,11 @@ public class WebSyncService extends Service {
      */
     @Override
     public void onDestroy() {
-        if (Logger.DEBUG) { Log.d(TAG, "[onDestroy]"); }
+        if (Logger.DEBUG) { Log.d(TAG, "[websync stop]"); }
         if (db != null) {
             db.close();
         }
-        notificationHelper.cancelNotification();
-
-        if (thread != null) {
-            thread.interrupt();
-            thread = null;
-        }
-    }
-
-
-    @Nullable
-    @Override
-    public IBinder onBind(Intent intent) {
-        throw new UnsupportedOperationException("Not implemented");
+        super.onDestroy();
     }
 
 }

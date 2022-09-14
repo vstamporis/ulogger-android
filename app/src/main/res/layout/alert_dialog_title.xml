@@ -15,7 +15,8 @@
     android:orientation="vertical"
     android:paddingLeft="?attr/dialogPreferredPadding"
     android:paddingRight="?attr/dialogPreferredPadding"
-    android:paddingTop="@dimen/dialog_padding_top">
+    android:paddingTop="@dimen/abc_dialog_padding_top_material"
+    tools:ignore="PrivateResource">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -32,7 +33,7 @@
             android:src="@null"
             tools:ignore="ContentDescription" />
 
-        <TextView
+        <androidx.appcompat.widget.DialogTitle
             android:id="@+id/customTitle"
             style="?android:attr/windowTitleStyle"
             android:layout_width="match_parent"
@@ -40,8 +41,7 @@
             android:ellipsize="end"
             android:singleLine="true"
             android:textAlignment="viewStart"
-            android:gravity="start"
-            tools:text="Preference title" />
+            android:gravity="start" />
     </LinearLayout>
     <TextView
         android:id="@+id/customMessage"
@@ -50,8 +50,7 @@
         android:layout_marginTop="10dp"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="?android:attr/textColorSecondary"
-        tools:text="Message describing preference. Maybe be several lines long."/>
+        android:textColor="?android:attr/textColorSecondary" />
 
 </LinearLayout>
 

@@ -32,7 +32,6 @@ public class AutoNamePreferenceDialogFragment extends EditTextPreferenceDialogFr
     private TextView preview = null;
     private Date TEMPLATE_DATE;
 
-    @NonNull
     public static AutoNamePreferenceDialogFragment newInstance(String key) {
         final AutoNamePreferenceDialogFragment fragment = new AutoNamePreferenceDialogFragment();
         final Bundle b = new Bundle(1);
@@ -52,7 +51,7 @@ public class AutoNamePreferenceDialogFragment extends EditTextPreferenceDialogFr
             if (positiveButton != null && editText != null) {
                 editText.addTextChangedListener(this);
                 ViewGroup layout = (ViewGroup) editText.getParent();
-                preview = new TextView(requireContext());
+                preview = new TextView(getContext());
                 layout.addView(preview, layout.indexOfChild(editText));
                 preview.setGravity(Gravity.CENTER);
                 updatePreview(editText.getText().toString());

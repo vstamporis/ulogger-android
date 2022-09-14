@@ -11,7 +11,6 @@
     <string name="button_newtrack">Nueva ruta</string>
     <string name="button_upload">Subir</string>
     <string name="is_running" comment="substituted app_name">%s está en ejecución</string>
-    <string name="is_uploading" comment="substituted app_name">%s está subiendo posiciones</string>
     <string name="title_newtrack">Nueva ruta</string>
     <string name="label_track">Ruta actual</string>
     <string name="label_newtrack_name">Nombre de la nueva ruta</string>
@@ -135,7 +134,4 @@
     <string name="tracking">Seguimiento de ubicación</string>
     <string name="clear">Limpiar ruta</string>
     <string name="share_link">Enlace para compartir ruta</string>
-    <string name="image_task_failed">Error en el remuestreo de la imagen</string>
-    <string name="background_location_rationale">El permiso de ubicación en segundo plano solo es necesario cuando el seguimiento se inicia sin la interacción del usuario: a través de un comando externo o cuando la aplicación se inicia automáticamente al arrancar el sistema.\nPara que esta funcionalidad funcione, debe seleccionar la opción \"%s\" en el diálogo de permisos de ubicación.\n¿Continuar con los permisos de la aplicación? </string>
-    <string name="background_location_required">Se requiere permiso de ubicación en segundo plano</string>
 </resources>

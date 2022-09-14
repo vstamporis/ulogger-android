@@ -28,9 +28,9 @@ Together they make a complete self owned and controlled client–server solution
 
 led | tracking | synchronization
 -|-------- | ---------------
-![status green](https://dummyimage.com/10/00ff00) |  on, recently updated | synchronized
-![status yellow](https://dummyimage.com/10/ffe600) | on, long time since last update | synchronization delay
-![status red](https://dummyimage.com/10/ff0000) | off | synchronization error
+![status green](https://placehold.it/10/00ff00/000000?text=+) |  on, recently updated | synchronized
+![status yellow](https://placehold.it/10/ffe600/000000?text=+) | on, long time since last update | synchronization delay
+![status red](https://placehold.it/10/ff0000/000000?text=+) | off | synchronization error
 
 - clicking on current track's name will show track statistics
 
@@ -49,10 +49,6 @@ led | tracking | synchronization
   - Automate (LlamaLab) – Send broadcast block with `Package`, `Receiver Class` and `Action` fields as above and `Extras` field eg. `{"command": "start logger"}`
   - Tasker (joaomgcd) – System → Send intent. Fields `Action`, `Package`, `Class` as above and `Extra` field eg. `command:start logger`
 - command line: `am broadcast -a net.fabiszewski.ulogger.intent.action.COMMAND -e "command" "start logger" net.fabiszewski.ulogger net.fabiszewski.ulogger.ExternalCommandReceiver`
-
-## Location permissions
-Starting with Android 11, if you want to use the application without user interaction (automating, autostart on boot), it is necessary to grant application background location permission ("Allow all the time" option).
-In all other cases, when you start tracking from app screen, it is enough to grant "Allow only while using the app" option.
 
 ## App settings guidelines
 Finding the optimized settings for your practice can be a bit complex and may require you to do a lot of testing.

@@ -11,7 +11,6 @@
     <string name="button_newtrack">Nuova traccia</string>
     <string name="button_upload">Carica</string>
     <string name="is_running" comment="substituted app_name">%s è in esecuzione</string>
-    <string name="is_uploading" comment="substituted app_name">%s sta caricando le posizioni</string>
     <string name="title_newtrack">Nuova traccia</string>
     <string name="label_track">Traccia corrente</string>
     <string name="label_newtrack_name">Nome della nuova traccia</string>
@@ -135,7 +134,4 @@
     <string name="tracking">Tracciamento</string>
     <string name="clear">Resetta traccia</string>
     <string name="share_link">Condividi link della traccia</string>
-    <string name="image_task_failed">Ridimensionamento dell\'immagine fallito</string>
-    <string name="background_location_rationale">I permessi di localizzazione in background sono necessari solamente quando il tracciamento inizia senza l\'interazione dell\'utente: attraverso un comando esterno oppure quando un\'applicazione è automaticamente avviata all\'accensione del dispositivo.\nPer avviare questa funzionalità va scelta l\'opzione \"%s\" nella finestra di dialogo dei permessi di localizzazione.\nProcedere ai permessi dell\'applicazione?</string>
-    <string name="background_location_required">Sono necessari i permessi di localizzazione in background</string>
 </resources>

@@ -9,20 +9,12 @@
 
 package net.fabiszewski.ulogger;
 
-import static androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult;
-import static net.fabiszewski.ulogger.Alert.showAlert;
-import static net.fabiszewski.ulogger.Alert.showConfirm;
-import static net.fabiszewski.ulogger.GpxExportTask.GPX_EXTENSION;
-import static java.util.concurrent.Executors.newCachedThreadPool;
-
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.net.Uri;
 import android.os.Bundle;
-import android.text.method.LinkMovementMethod;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -30,7 +22,6 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.activity.result.ActivityResultLauncher;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AlertDialog;
@@ -41,7 +32,13 @@ import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.preference.PreferenceManager;
 
-import java.util.concurrent.ExecutorService;
+import static net.fabiszewski.ulogger.Alert.showAlert;
+import static net.fabiszewski.ulogger.Alert.showConfirm;
+import static net.fabiszewski.ulogger.GpxExportService.GPX_EXTENSION;
+import static net.fabiszewski.ulogger.GpxExportService.GPX_MIME;
+
+import java.io.File;
+import java.lang.reflect.Method;
 
 /**
  * Main activity of ulogger
@@ -49,19 +46,19 @@ import java.util.concurrent.ExecutorService;
  */
 
 public class MainActivity extends AppCompatActivity
-        implements FragmentManager.OnBackStackChangedListener, MainFragment.OnFragmentInteractionListener,
-        GpxExportTask.GpxExportTaskCallback {
+        implements FragmentManager.OnBackStackChangedListener, MainFragment.OnFragmentInteractionListener {
 
     private final String TAG = MainActivity.class.getSimpleName();
 
+
+    private final static int RESULT_PREFS_UPDATED = 1;
+    private final static int RESULT_GPX_EXPORT = 2;
     public final static String UPDATED_PREFS = "extra_updated_prefs";
 
     public String preferenceHost;
     public String preferenceUnits;
     public long preferenceMinTimeMillis;
     public boolean preferenceLiveSync;
-    private GpxExportTask gpxExportTask;
-    private final ExecutorService executor = newCachedThreadPool();
 
     private DbAccess db;
 
@@ -117,6 +114,16 @@ public class MainActivity extends AppCompatActivity
         super.onDestroy();
     }
 
+    protected void onStop() {
+        super.onStop();
+            try {
+                Class<?> emmaRTClass = Class.forName("com.vladium.emma.rt.RT");
+                Method dumpCoverageMethod = emmaRTClass.getMethod("dumpCoverageData", File.class, boolean.class, boolean.class);
+                dumpCoverageMethod.invoke(null, new File("sdcard/coverage.exec"), false, false);
+            } catch (Exception e) {}
+
+    }
+
 
     /**
      * Create main menu
@@ -136,25 +143,28 @@ public class MainActivity extends AppCompatActivity
      */
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
-        final int id = item.getItemId();
-        if (id == R.id.menu_settings) {
-            Intent intent = new Intent(this, SettingsActivity.class);
-            settingsLauncher.launch(intent);
-            return true;
-        } else if (id == R.id.menu_about) {
-            showAbout();
-            return true;
-        } else if (id == R.id.menu_export) {
-            startExport();
-            return true;
-        } else if (id == R.id.menu_clear) {
-            clearTrack();
-            return true;
-        } else if (id == android.R.id.home) {
-            onBackPressed();
-            return true;
+        switch (item.getItemId()) {
+
+            case R.id.menu_settings:
+                Intent i = new Intent(this, SettingsActivity.class);
+                startActivityForResult(i, RESULT_PREFS_UPDATED);
+                return true;
+            case R.id.menu_about:
+                showAbout();
+                return true;
+            case R.id.menu_export:
+                startExport();
+                return true;
+            case R.id.menu_clear:
+                clearTrack();
+                return true;
+            case android.R.id.home:
+                onBackPressed();
+                return true;
+
+            default:
+                return super.onOptionsItemSelected(item);
         }
-        return super.onOptionsItemSelected(item);
     }
 
     /**
@@ -175,13 +185,48 @@ public class MainActivity extends AppCompatActivity
         showToast(getString(R.string.no_track_warning));
     }
 
+
+    /**
+     * Callback on activity result.
+     * Called after user updated preferences
+     *
+     * @param requestCode Activity code
+     * @param resultCode Result
+     * @param data Data
+     */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == RESULT_PREFS_UPDATED) {
+            // Preferences updated
+            updatePreferences();
+            if (LoggerService.isRunning()) {
+                // restart logging
+                Intent intent = new Intent(MainActivity.this, LoggerService.class);
+                intent.putExtra(UPDATED_PREFS, true);
+                startService(intent);
+            }
+        } else if (requestCode == RESULT_GPX_EXPORT && resultCode == Activity.RESULT_OK) {
+            if (data != null) {
+                Intent intent = new Intent(MainActivity.this, GpxExportService.class);
+                intent.setData(data.getData());
+                startService(intent);
+                showToast(getString(R.string.export_started));
+            }
+        }
+    }
+
     /**
      * Start export service
      */
     private void startExport() {
         if (db.countPositions() > 0) {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType(GPX_MIME);
+            intent.putExtra(Intent.EXTRA_TITLE, DbAccess.getTrackName(this) + GPX_EXTENSION);
             try {
-                getExportUri.launch(DbAccess.getTrackName(this) + GPX_EXTENSION);
+                startActivityForResult(intent, RESULT_GPX_EXPORT);
             } catch (ActivityNotFoundException e) {
                 showToast(getString(R.string.cannot_open_picker), Toast.LENGTH_LONG);
             }
@@ -249,8 +294,6 @@ public class MainActivity extends AppCompatActivity
         if (descriptionLabel != null && description2Label != null) {
             descriptionLabel.setText(HtmlCompat.fromHtml(getString(R.string.about_description), HtmlCompat.FROM_HTML_MODE_LEGACY));
             description2Label.setText(HtmlCompat.fromHtml(getString(R.string.about_description2), HtmlCompat.FROM_HTML_MODE_LEGACY));
-            descriptionLabel.setMovementMethod(LinkMovementMethod.getInstance());
-            description2Label.setMovementMethod(LinkMovementMethod.getInstance());
         }
         final Button okButton = dialog.findViewById(R.id.about_button_ok);
         if (okButton != null) {
@@ -267,66 +310,10 @@ public class MainActivity extends AppCompatActivity
     }
 
     /**
-     * Open file picker to get exported file URI, then run export task
-     */
-    final ActivityResultLauncher<String> getExportUri = registerForActivityResult(new CreateGpxDocument(), uri -> {
-        if (uri != null) {
-            runGpxExportTask(uri);
-        }
-    });
-
-    /**
-     * Open settings activity, update preferences on return
-     */
-    final ActivityResultLauncher<Intent> settingsLauncher = registerForActivityResult(new StartActivityForResult(), result -> {
-        if (result.getResultCode() == Activity.RESULT_OK) {
-            // Preferences updated
-            updatePreferences();
-            if (LoggerService.isRunning()) {
-                // restart logging
-                Intent intent = new Intent(MainActivity.this, LoggerService.class);
-                intent.putExtra(UPDATED_PREFS, true);
-                startService(intent);
-            }
-        }
-    });
-
-    /**
      * Called whenever the contents of the back stack change.
      */
     @Override
     public void onBackStackChanged() {
         setHomeUpButton();
     }
-
-    /**
-     * Start GPX export task
-     */
-    private void runGpxExportTask(@NonNull Uri uri) {
-        if (gpxExportTask == null || !gpxExportTask.isRunning()) {
-            gpxExportTask = new GpxExportTask(uri, this);
-            executor.execute(gpxExportTask);
-            showToast(getString(R.string.export_started));
-        }
-    }
-
-    @Override
-    public void onGpxExportTaskCompleted() {
-        showToast(getString(R.string.export_done));
-    }
-
-    @Override
-    public void onGpxExportTaskFailure(@NonNull String error) {
-        String message = getString(R.string.export_failed);
-        if (!error.isEmpty()) {
-            message += "\n" + error;
-        }
-        showToast(message);
-    }
-
-    @Override
-    public Activity getActivity() {
-        return this;
-    }
-
 }

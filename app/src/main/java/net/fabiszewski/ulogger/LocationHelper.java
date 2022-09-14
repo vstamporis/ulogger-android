@@ -16,8 +16,6 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
-import android.os.Build;
-import android.os.CancellationSignal;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
@@ -48,8 +46,10 @@ class LocationHelper {
     private int maxAccuracy;
     private float minDistance;
     private long minTimeMillis;
-    private long maxTimeMillis;
-    private final List<String> userProviders = new ArrayList<>();
+    // max time tolerance is half min time, but not more that 5 min
+    final private long minTimeTolerance = Math.min(minTimeMillis / 2, 5 * 60 * 1000);
+    final private long maxTimeMillis = minTimeMillis + minTimeTolerance;
+    private List<String> userProviders = new ArrayList<>();
 
 
     private LocationHelper(@NonNull Context context) {
@@ -79,9 +79,6 @@ class LocationHelper {
         if (Logger.DEBUG) { Log.d(TAG, "[updatePreferences]"); }
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         minTimeMillis = Long.parseLong(prefs.getString(SettingsActivity.KEY_MIN_TIME, context.getString(R.string.pref_mintime_default))) * 1000;
-        // max time tolerance is half min time, but not more that 5 min
-        long minTimeTolerance = Math.min(minTimeMillis / 2, 5 * 60 * 1000);
-        maxTimeMillis = minTimeMillis + minTimeTolerance;
         minDistance = Float.parseFloat(prefs.getString(SettingsActivity.KEY_MIN_DISTANCE, context.getString(R.string.pref_mindistance_default)));
         maxAccuracy = Integer.parseInt(prefs.getString(SettingsActivity.KEY_MIN_ACCURACY, context.getString(R.string.pref_minaccuracy_default)));
         userProviders.clear();
@@ -97,27 +94,12 @@ class LocationHelper {
     /**
      * Check if user granted permission to access location.
      *
+     * @param context Context
      * @return True if permission granted, false otherwise
      */
     boolean canAccessLocation() {
-        boolean ret = (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) ||
-                (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED);
+        boolean ret = (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED);
         if (Logger.DEBUG) { Log.d(TAG, "[canAccessLocation: " + ret + "]"); }
-        return ret;
-    }
-
-    /**
-     * Check if user granted permission to access background location.
-     *
-     * @return True if permission granted, false otherwise
-     */
-    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
-    boolean canAccessBackgroundLocation() {
-        boolean ret = true;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ret = (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED);
-        }
-        if (Logger.DEBUG) { Log.d(TAG, "[canAccessBackgroundLocation: " + ret + "]"); }
         return ret;
     }
 
@@ -135,11 +117,11 @@ class LocationHelper {
     /**
      * Request single location update
      * @param listener Listener
-     * @param cancellationSignal Cancellation signal
+     * @param looper Looper
      * @throws LoggerException Exception on permission denied or all providers disabled
      */
-    void requestSingleUpdate(@NonNull LocationListener listener, CancellationSignal cancellationSignal) throws LoggerException {
-        requestAllProvidersUpdates(listener, Looper.getMainLooper(), true, cancellationSignal);
+    void requestSingleUpdate(@NonNull LocationListener listener, @Nullable Looper looper) throws LoggerException {
+        requestAllProvidersUpdates(listener, looper, true);
     }
 
     /**
@@ -149,7 +131,7 @@ class LocationHelper {
      * @throws LoggerException Exception on all requested providers failure
      */
     void requestLocationUpdates(@NonNull LocationListener listener, @Nullable Looper looper) throws LoggerException {
-        requestAllProvidersUpdates(listener, looper, false, null);
+        requestAllProvidersUpdates(listener, looper, false);
     }
 
     /**
@@ -157,15 +139,13 @@ class LocationHelper {
      * @param listener Listener
      * @param looper Looper
      * @param singleShot Request single update if true
-     * @param cancellationSignal Cancellation signal
      * @throws LoggerException Exception on all requested providers failure
      */
-    private void requestAllProvidersUpdates(@NonNull LocationListener listener, @Nullable Looper looper, 
-                                            boolean singleShot, CancellationSignal cancellationSignal) throws LoggerException {
+    private void requestAllProvidersUpdates(@NonNull LocationListener listener, @Nullable Looper looper, boolean singleShot) throws LoggerException {
         List<Integer> results = new ArrayList<>();
         for (String provider : userProviders) {
             try {
-                requestProviderUpdates(provider, listener, looper, singleShot, cancellationSignal);
+                requestProviderUpdates(provider, listener, looper, singleShot);
                 results.add(LoggerException.E_OK);
             } catch (LoggerException e) {
                 results.add(e.getCode());
@@ -183,28 +163,16 @@ class LocationHelper {
      * @param listener Listener
      * @param looper Looper
      * @param singleShot Request single update if true
-     * @param cancellationSignal Cancellation signal
      * @throws LoggerException Exception on permission denied or provider disabled
      */
-    @SuppressWarnings({"deprecation", "RedundantSuppression"})
-    private void requestProviderUpdates(@NonNull String provider, @NonNull LocationListener listener, @Nullable Looper looper,
-                                        boolean singleShot, @Nullable CancellationSignal cancellationSignal) throws LoggerException {
+    private void requestProviderUpdates(@NonNull String provider, @NonNull LocationListener listener, @Nullable Looper looper, boolean singleShot) throws LoggerException {
         if (Logger.DEBUG) { Log.d(TAG, "[requestProviderUpdates: " + provider + " (" + singleShot + ")]"); }
         try {
             if (!singleShot) {
                 // request even if provider is disabled to allow users re-enable it later
                 locationManager.requestLocationUpdates(provider, minTimeMillis, minDistance, listener, looper);
             } else if (locationManager.isProviderEnabled(provider)) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    locationManager.getCurrentLocation(provider, cancellationSignal, context.getMainExecutor(), location -> {
-                        if (Logger.DEBUG) { Log.d(TAG, "[getCurrentLocation location: " + location + ", provider: " + provider + "]"); }
-                        if (location != null) {
-                            listener.onLocationChanged(location);
-                        }
-                    });
-                } else {
-                    locationManager.requestSingleUpdate(provider, listener, looper);
-                }
+                locationManager.requestSingleUpdate(provider, listener, looper);
             }
             if (!locationManager.isProviderEnabled(provider)) {
                 if (Logger.DEBUG) { Log.d(TAG, "[requestProviderUpdates disabled: " + provider + " (" + singleShot + ")]"); }
